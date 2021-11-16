@@ -3,6 +3,16 @@ const { NETWORK } = require(`${basePath}/constants/network.js`);
 const fs = require("fs");
 const sha1 = require(`${basePath}/node_modules/sha1`);
 const { createCanvas, loadImage } = require(`${basePath}/node_modules/canvas`);
+
+
+var ffmpeg = require(`${basePath}/node_modules/fluent-ffmpeg`);
+var ffmpegPath = require(`${basePath}/node_modules/ffmpeg-static`);
+//import * as ffprobe from "ffprobe-static";
+
+ffmpeg.setFfmpegPath(ffmpegPath);
+//ffmpeg.setFfprobePath(ffprobe.path);
+
+
 const buildDir = `${basePath}/build`;
 const layersDir = `${basePath}/layers`;
 const {
@@ -40,6 +50,7 @@ const buildSetup = () => {
   fs.mkdirSync(buildDir);
   fs.mkdirSync(`${buildDir}/json`);
   fs.mkdirSync(`${buildDir}/images`);
+  fs.mkdirSync(`${buildDir}/videos`);
   if (gif.export) {
     fs.mkdirSync(`${buildDir}/gifs`);
   }
@@ -103,6 +114,10 @@ const layersSetup = (layersOrder) => {
       layerObj.options?.["bypassDNA"] !== undefined
         ? layerObj.options?.["bypassDNA"]
         : false,
+    isAudio:
+      layerObj.options?.["isAudio"] !== undefined
+        ? layerObj.options?.["isAudio"]
+        : false,
   }));
   return layers;
 };
@@ -113,6 +128,37 @@ const saveImage = (_editionCount) => {
     canvas.toBuffer("image/png")
   );
 };
+
+const saveVideo = async (_editionCount, audioFile) => {
+
+  if( audioFile?.selectedElement?.path != undefined)
+  {
+    ffmpeg(audioFile?.selectedElement?.path)
+    .input(`${buildDir}/images/${_editionCount}.png`)
+    .outputOptions(['-pix_fmt yuv420p'])
+    .videoCodec('libx264')
+    .on('end', function() {
+      console.log('Finished processing');
+    })
+    .save(`${buildDir}/videos/${_editionCount}.m4v`);
+
+    addAttributes({layer: audioFile});
+  }
+  else
+  {
+    ffmpeg()
+    .input(`${buildDir}/images/${_editionCount}.png`)
+    .loop(5)
+    .outputOptions(['-pix_fmt yuv420p'])
+    .videoCodec('libx264')
+    .on('end', function() {
+      console.log('Finished processing');
+    })
+    .save(`${buildDir}/videos/${_editionCount}.m4v`);
+  }
+
+  
+}
 
 const genColor = () => {
   let hue = Math.floor(Math.random() * 360);
@@ -222,6 +268,7 @@ const constructLayerToDna = (_dna = "", _layers = []) => {
       blend: layer.blend,
       opacity: layer.opacity,
       selectedElement: selectedElement,
+      isAudio: layer.isAudio,
     };
   });
   return mappedDnaToLayers;
@@ -357,11 +404,13 @@ const startCreating = async () => {
         let results = constructLayerToDna(newDna, layers);
         let loadedElements = [];
 
-        results.forEach((layer) => {
+        results.filter((layer)=> !layer.isAudio).forEach((layer) => {
           loadedElements.push(loadLayerImg(layer));
         });
 
-        await Promise.all(loadedElements).then((renderObjectArray) => {
+        let audio = results.filter((layer) => layer.isAudio).shift();
+
+        await Promise.all(loadedElements).then(async (renderObjectArray) => {
           debugLogs ? console.log("Clearing canvas") : null;
           ctx.clearRect(0, 0, format.width, format.height);
           if (gif.export) {
@@ -395,6 +444,7 @@ const startCreating = async () => {
             ? console.log("Editions left to create: ", abstractedIndexes)
             : null;
           saveImage(abstractedIndexes[0]);
+          await saveVideo(abstractedIndexes[0], audio);
           addMetadata(newDna, abstractedIndexes[0]);
           saveMetaDataSingleFile(abstractedIndexes[0]);
           console.log(

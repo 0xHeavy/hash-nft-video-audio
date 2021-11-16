@@ -33,6 +33,7 @@ const layerConfigurations = [
       { name: "Shine" },
       { name: "Bottom lid" },
       { name: "Top lid" },
+      { name: "Audio", options:{ isAudio: true }}
     ],
   },
 ];
